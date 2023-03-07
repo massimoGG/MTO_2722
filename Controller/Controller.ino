@@ -11,6 +11,7 @@
 /**
  * Function Prototypes
  */
+void calibrate();
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
 
@@ -28,9 +29,7 @@ void setMotorY(int16_t dc);
 #define PIN_X_LEFT  0
 #define PIN_X_RIGHT 0
 
-/**
-* State machine
-*/
+
 
 
 void setup() {
@@ -48,7 +47,7 @@ void setup() {
 
   /* Clear Timer1 */
   OCR2A = 180; // (180+1) / 256 = 70.7%
-  OCR2B = 50;  // (50+1) / 256 = 19.9%
+  OCR2B = 0;
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -137,10 +136,33 @@ void loop() {
   delay(1); //? 
 }
 
+/**
+ * Zet alle waardes op hun equivalent beginstand
+ */
+void calibrate() {
+  float x, y, z;
+
+  // Lees huidige toestand uit
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(x, y, z);
+
+  }
+
+  if (IMU.gyroscopeAvailable()) {
+    IMU.readGyroscope(x,y,z);
+
+  }
+
+  // Zet beginpositie gelijk aan die waardes
+  
+
+
+}
+
 /***
  * Bestuurt de X-as motor
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
-*/
+ */
 void setMotorX(int16_t dc) {
   Serial.print("setMotorX - ");
   Serial.println(dc);
@@ -161,6 +183,6 @@ void setMotorX(int16_t dc) {
 /***
  * Bestuurt de Y-as motor
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
-*/
+ */
 void setMotorY(int16_t dc) {
 }
