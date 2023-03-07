@@ -7,6 +7,7 @@
  * Includes
  */
 #include <Arduino_LSM9DS1.h>
+#include <ArduPID.h>
 
 /**
  * Function Prototypes
@@ -21,16 +22,37 @@ void setMotorY(int16_t dc);
 #define PWM_FREQ    0x03
 
 #define PIN_PWM_X   9
-#define PIN_X_LEFT  6
-#define PIN_X_RIGHT 7
+#define PIN_X_LEFT  7
+#define PIN_X_RIGHT 6
 
 // To be implemented
 #define PIN_PWM_Y   10
-#define PIN_X_LEFT  0
-#define PIN_X_RIGHT 0
+#define PIN_Y_LEFT  0
+#define PIN_Y_RIGHT 0
 
+float theta_Kp; 
+float theta_Ki;
+float theta_Kd;
 
+float theta_Now;
+float theta_Zero;
+float theta_Error;
 
+float theta_Integral;
+float theta_Speed_Now;
+
+unsigned long imu_Time_Now = 0;
+unsigned long imu_Time_Prev= 0;
+
+float angleX = 0;
+
+ArduPID PID;
+double setpoint = 0;
+double input;
+double output;
+double p = 20;
+double i = 0;
+double d = 10;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -46,8 +68,8 @@ void setup() {
   pinMode(PIN_X_RIGHT, OUTPUT);
 
   /* Clear Timer1 */
-  OCR2A = 180; // (180+1) / 256 = 70.7%
-  OCR2B = 0;
+  //OCR2A = 180; // (180+1) / 256 = 70.7%
+  //OCR2B = 0;
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -65,13 +87,20 @@ void setup() {
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  imu_Time_Prev = micros();
+
   /* Aansturing */
   /* 
     PWM Signaal op clk/64 = 0x03 
   */
-  TCCR1B = TCCR1B | PWM_FREQ;
+  //TCCR1B = TCCR1B | PWM_FREQ;
+
+  /* PID regelaar */
+  PID.begin(&input, &output, &setpoint, p, i, d);
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  calibrate();
 
   Serial.println("Pendulum Stabiel - Initialized");
 }
@@ -80,53 +109,41 @@ void loop() {
   // Temp 
   float x, y, z;
 
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(x, y, z);
-
-    Serial.print("Acceleration: ");
-    Serial.print(x);
-    Serial.print('\t');
-    Serial.print(y);
-    Serial.print('\t');
-    Serial.println(z);
-  }
-
   if (IMU.gyroscopeAvailable()) {
     IMU.readGyroscope(x,y,z);
 
-    Serial.print("Gyroscope: ");
-    Serial.print(x);
-    Serial.print('\t');
-    Serial.print(y);
-    Serial.print('\t');
-    Serial.println(z);
+    /* Update time difference */
+    imu_Time_Prev = imu_Time_Now;
+    imu_Time_Now = micros();
+
+    /* Bepaal X-as hoek */
+
+    theta_Error = theta_Now - theta_Zero;
+
+    theta_Integral += theta_Error * (imu_Time_Now - imu_Time_Prev) / 1E6;
+
+    /* X-as PID */
+    input = x;
+    PID.compute();
+    //PID.debug(&Serial, "PID");
+
+    /* PID OUTPUT */
+    Serial.print("PID - ");
+    Serial.println((uint8_t)output);
+    setMotorX((uint8_t)output);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Hier regellus/berekeningen */
 
-  /*
-  // Implementatie van ander project 
+  float X_P_Accel = theta_Kp * (theta_Now - theta_Zero);;
+  float X_I_Accel = theta_Ki * theta_Integral;
+  float X_D_Accel = theta_Kd * theta_Speed_Now;
+  
+  float X_PID_Accel = X_P_Accel + X_I_Accel + X_D_Accel;
 
-  left_P_Accel = theta_Kp * (theta_Now - theta_Zero);
-  left_I_Accel = theta_Ki * theta_Integral;
-  left_D_Accel = theta_Kd * theta_Speed_Now;
-  left_S_Accel = theta_Ks * left_Speed_RPM / 1000.;
-  left_PID_Accel = left_P_Accel + left_I_Accel + left_D_Accel + left_S_Accel;
-
-  float friction = 0;
-  if (left_Speed_RPM > 0.5) {
-    friction = friction_Value;
-  } else if (left_Speed_RPM < -0.5) {
-    friction = -friction_Value;
-  }
-
-  float voltage = (left_PID_Accel + 0.303 * left_Speed_RPM + friction) / 9.4;     // Equation measured from Acceleration Motor Tests
-
-  // Ipv voltage zouden we duty-cycle moeten hebben
-  left_PID_Voltage = round(constrain(voltage, -voltage_Max, voltage_Max));
-  */
+  float X_DC = 100;
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -142,21 +159,10 @@ void loop() {
 void calibrate() {
   float x, y, z;
 
-  // Lees huidige toestand uit
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(x, y, z);
-
-  }
-
   if (IMU.gyroscopeAvailable()) {
     IMU.readGyroscope(x,y,z);
 
   }
-
-  // Zet beginpositie gelijk aan die waardes
-  
-
-
 }
 
 /***
@@ -169,15 +175,16 @@ void setMotorX(int16_t dc) {
 
   if (dc < 0) {
     // Anti-clockwise
-    digitalWrite(PIN_X_RIGHT, 0);
-    digitalWrite(PIN_X_LEFT, 1);
+    digitalWrite(PIN_X_RIGHT, LOW);
+    digitalWrite(PIN_X_LEFT, HIGH);
   } else {
     // Clockwise
-    digitalWrite(PIN_X_LEFT, 0);
-    digitalWrite(PIN_X_RIGHT, 1);
+    digitalWrite(PIN_X_LEFT, LOW);
+    digitalWrite(PIN_X_RIGHT, HIGH);
   }
 
   analogWrite(PIN_PWM_X, abs(dc));
+//  OCR2A = 100;
 }
 
 /***
