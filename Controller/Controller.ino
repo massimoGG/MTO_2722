@@ -1,13 +1,11 @@
 /**
  * Includes
+ SPARKFUN LSM0DS1.h!!
  */
 #include <Wire.h>
 #include <SPI.h>
-#include <LSM9DS1_Registers.h>
-#include <LSM9DS1_Types.h>
-#include <SparkFunLSM9DS1.h>
 
-// #include <Arduino_LSM9DS1.h>
+#include <SparkFunLSM9DS1.h>
 
 /**
  * Function Prototypes
@@ -41,17 +39,9 @@ void printAttitude(float ax, float ay, float az, float mx, float my, float mz);
 #define DECLINATION 2.14
 //-8.58 // Declination (degrees) in Boulder, CO.
 
-// PID variables
-float theta_Kp;
-float theta_Ki;
-float theta_Kd;
-
-float theta_Now;
-float theta_Zero;
-float theta_Error;
-
-float theta_Integral;
-float theta_Speed_Now;
+// Limieten wat de pendulum nog kan tegenwerken
+#define limit_lin_min 0
+#define limit_lin_max 0
 
 // IMU
 unsigned long imu_Time_Now = 0;
@@ -88,8 +78,7 @@ void setup()
   if (!IMU.begin())
   {
     Serial.println("Failed to initialize IMO!");
-    while (1)
-      ;
+    while (1);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,26 +124,46 @@ void loop()
   imu_Time_Prev = imu_Time_Now;
   imu_Time_Now = micros();
 
-  printAttitude(IMU.ax, IMU.ay, IMU.az, -IMU.my, -IMU.mx, IMU.mz);
-  Serial.println();
+  //printAttitude(IMU.ax, IMU.ay, IMU.az, -IMU.my, -IMU.mx, IMU.mz);
+  //Serial.println();
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Hier regellus/berekeningen */
+  //Serial.print("Pitch - ");
+  Serial.print("90 -90 ");
+  Serial.print(getPitch());
+  Serial.print(" ");
+  Serial.print(IMU.ax);
+  //Serial.print("\t| ");
+  float hoek = getPitch();
 
-  float X_P_Accel = theta_Kp * (theta_Now - theta_Zero);
-  ;
-  float X_I_Accel = theta_Ki * theta_Integral;
-  float X_D_Accel = theta_Kd * theta_Speed_Now;
+  float offset = 11;
+  float lim = 10;
+  
+  // NP Correctie
+  hoek -= offset;
 
-  float X_PID_Accel = X_P_Accel + X_I_Accel + X_D_Accel;
+  // Regelaar
+  int16_t hoekversnelling = map(IMU.ax, );
 
-  float X_DC = 100;
+
+  if (-90 < hoek && hoek < 90) {
+    if (hoek > lim) {
+      setMotorX(-100);
+    }
+    if (hoek < -lim) {
+      setMotorX(100);
+    }
+  } else {
+    setMotorX(0);
+  }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Set waardes uitzenden naar motoren */
 
+  Serial.println();
   delay(50); //?
 }
 
@@ -177,9 +186,11 @@ void calibrate()
  */
 void setMotorX(int16_t dc)
 {
+  /*
   Serial.print("setMotorX - ");
-  Serial.println(dc);
-
+  Serial.print(dc);
+  Serial.print("\t| ");
+*/
   if (dc < 0)
   {
     // Anti-clockwise
@@ -207,7 +218,11 @@ void setMotorY(int16_t dc)
 
 float getPitch()
 {
-  float pitch = atan2(IMU.ay, IMU.az);
+  //printAttitude(IMU.ax, IMU.ay, IMU.az, -IMU.my, -IMU.mx, IMU.mz);
+  float ax = IMU.ax;
+  float ay = IMU.ay;
+  float az = IMU.az;
+  float pitch = atan2(-ax, sqrt(ay * ay + az * az));
 
   // Convert radians to degrees
   pitch *= 180.0 / PI;
@@ -232,8 +247,9 @@ void printAttitude(float ax, float ay, float az, float mx, float my, float mz)
   pitch *= 180.0 / PI;
   roll *= 180.0 / PI;
 
-  Serial.print("Pitch, Roll: ");
+  Serial.print("Pitch, Roll:\t");
   Serial.print(pitch, 2);
-  Serial.print(", ");
-  Serial.println(roll, 2);
+  Serial.print(",\t");
+    Serial.print(roll, 2);
+    Serial.print("\t| ");
 }
