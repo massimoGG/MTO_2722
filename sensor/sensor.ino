@@ -14,13 +14,19 @@
   This example code is in the public domain.
 */
 
+#include <stdio.h>
+#include <string.h>
+
 #include <Wire.h>
 #include <SPI.h>
 
 #include <Arduino_LSM9DS1.h>
 
+int PID(float kp, float ki, float kd, double toError, double priError, double curVal);
+void accelerate(float acceleration);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
+float getPitch();
 
 #define PWM_FREQ 0x03
 
@@ -34,6 +40,9 @@ void setMotorY(int16_t dc);
 // http://www.ngdc.noaa.gov/geomag-web/#declination
 #define DECLINATION 2.14
 //-8.58 // Declination (degrees) in Boulder, CO.
+
+unsigned long prevTime  = 0;
+unsigned long curTime   = 0;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -67,17 +76,91 @@ void setup() {
 }
 
 void loop() {
+  float huidigeHoek;
+  
+  static float grootsteHoek;
+  static int stoot;
+
+  huidigeHoek = getPitch();
+  Serial.print("Hoek: ");
+  Serial.print(huidigeHoek);
+  /*
+    Bereken stoot op de maximale hoek of negeer berekening
+    TODO: Met ABS() ervan om ook bij negatieve kant te doen
+  */
+  if (abs(huidigeHoek) > abs(grootsteHoek)) {
+    grootsteHoek = huidigeHoek;
+    /*    = PID(float kp, float ki, float kd, double toError,
+                double priError, double curVal);*/
+    stoot = PID(1, 1, 1, 1, 1, huidigeHoek);
+    Serial.print(" | Nieuwe stoot:\t");
+    Serial.print(stoot);
+  }
+  
+  /*
+    Reset als tussen [-10, 10] graden
+    MAAR HIER GEVEN WE OOK DE STOOT!
+  */
+  if (huidigeHoek > -10 && huidigeHoek < 10) {
+    grootsteHoek = 0;
+    setMotorX(stoot);
+  }
+
+  //Serial.print(getPitch());
+
+  Serial.println();
+  delay(10);
+}
+
+int PID(float kp, float ki, float kd, double toError, double priError, double curVal) {
+  int setP = 10;
+  double error = setP - curVal;
+
+  double Pvalue = error * kp;
+  double Ivalue = toError * ki;
+  double Dvalue = (error - priError) * kd;
+
+  double PIDvalue = Pvalue + Ivalue + Dvalue;
+  priError = error;
+  toError += error;
+
+  int Fvalue = (int)PIDvalue;
+
+  Fvalue = map(Fvalue, -90, 90, -50, 50);
+  return Fvalue;
+}
+
+/**
+ * Accelerates PWM 
+ */
+void accelerate(float acceleration) {
+  curTime   = micros();
   float x, y, z;
 
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(x, y, z);
-
-    float acc = (y + 0.2) * 500;
-    int16_t d = (uint16_t)acc;
-    Serial.println(d);
-    setMotorX(d);
-
+  if (!IMU.accelerationAvailable()) {
+    // IMU not available
+    return;
   }
+  IMU.readAcceleration(x, y, z);
+  
+  float hoek = getPitch();
+
+  Serial.print("(");
+  Serial.print(x);
+  Serial.print(", ");
+  Serial.print(y);
+  Serial.print(", ");
+  Serial.print(z);
+  Serial.print(", ");
+  Serial.print(hoek);
+  Serial.print(") ");
+
+  /**
+   * Hier berekenen welke versnellingsstoot we moeten hebben
+   */
+
+
+  prevTime  = curTime;
 }
 
 /***
@@ -90,7 +173,7 @@ void setMotorX(int16_t dc)
     dc = -255;
   if (dc > 255)
     dc = 255;
-  Serial.print("setMotorX - ");
+  Serial.print("| setMotorX - ");
   Serial.print(dc);
   Serial.print("\t| ");
 
@@ -109,4 +192,20 @@ void setMotorX(int16_t dc)
 
   analogWrite(PIN_PWM_X, abs(dc));
   //  OCR2A = 100;
+}
+
+float getPitch()
+{
+  float ax, ay, az;
+
+  if (!IMU.accelerationAvailable())
+    return;
+    
+  IMU.readAcceleration(ax, ay, az);
+
+  float pitch = atan2(-ax, sqrt(ay * ay + az * az));
+
+  // Convert radians to degrees
+  pitch *= 180.0 / PI;
+  return pitch;
 }
