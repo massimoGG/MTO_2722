@@ -22,7 +22,7 @@
 
 #include <Arduino_LSM9DS1.h>
 
-int PID(float kp, float ki, float kd, double toError, double priError, double curVal);
+int PID(float kp, float ki, float kd, double curVal);
 void accelerate(float acceleration);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
@@ -48,9 +48,19 @@ void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Serial Init */
+
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(IMU.accelerationSampleRate());
+  Serial.println(" Hz");
+
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(IMU.accelerationSampleRate());
+  Serial.println(" Hz");
   Serial.begin(115200);
 
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(IMU.accelerationSampleRate());
+  Serial.println(" Hz");/////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Pin Modes */
   pinMode(PIN_PWM_X, OUTPUT);
@@ -75,45 +85,79 @@ void setup() {
   Serial.println("X\tY\tZ");
 }
 
-void loop() {
+void regelDit() {
   float huidigeHoek;
   
   static float grootsteHoek;
   static int stoot;
 
-  huidigeHoek = getPitch();
-  Serial.print("Hoek: ");
+  huidigeHoek = getPitch() + 8;
+  Serial.print("Hoek:\t");
   Serial.print(huidigeHoek);
   /*
     Bereken stoot op de maximale hoek of negeer berekening
-    TODO: Met ABS() ervan om ook bij negatieve kant te doen
   */
   if (abs(huidigeHoek) > abs(grootsteHoek)) {
     grootsteHoek = huidigeHoek;
     /*    = PID(float kp, float ki, float kd, double toError,
                 double priError, double curVal);*/
-    stoot = PID(1, 1, 1, 1, 1, huidigeHoek);
-    Serial.print(" | Nieuwe stoot:\t");
-    Serial.print(stoot);
+    stoot += PID(0.1, 0, 0, huidigeHoek);
+    // Serial.print("\tNieuwe stoot:\t");
+    // Serial.print(stoot);
   }
-  
+  Serial.print("\tStoot:\t");
+  Serial.print(stoot);
+
   /*
     Reset als tussen [-10, 10] graden
     MAAR HIER GEVEN WE OOK DE STOOT!
   */
-  if (huidigeHoek > -10 && huidigeHoek < 10) {
+  if (abs(huidigeHoek) < 40) {
     grootsteHoek = 0;
     setMotorX(stoot);
   }
+}
 
-  //Serial.print(getPitch());
+void ruisTest() {
+  static int i = 0;
+
+  static int cur;
+  static unsigned long prevTime;
+  
+  unsigned long nu = millis();
+
+  // Elke 10 sec sneller gaan
+  if (nu - prevTime > 1E4) {
+    
+    // Sneller zetten
+    if (cur > 255)
+      cur = 255;
+    else 
+      cur += 20;
+
+    prevTime = nu;
+  }
+
+
+  Serial.print(cur);
+  Serial.print(" ");
+  Serial.print(getPitch());
+
+  setMotorX(cur);
+}
+
+void loop() {
+  regelDit();
 
   Serial.println();
   delay(10);
 }
 
-int PID(float kp, float ki, float kd, double toError, double priError, double curVal) {
-  int setP = 10;
+int PID(float kp, float ki, float kd, double curVal) {
+  static double priError;
+  static double toError;
+  int setP = 8;
+
   double error = setP - curVal;
 
   double Pvalue = error * kp;
@@ -124,10 +168,12 @@ int PID(float kp, float ki, float kd, double toError, double priError, double cu
   priError = error;
   toError += error;
 
-  int Fvalue = (int)PIDvalue;
+  return PIDvalue;
 
-  Fvalue = map(Fvalue, -90, 90, -50, 50);
-  return Fvalue;
+  // int Fvalue = (int)PIDvalue;
+
+  // Fvalue = map(Fvalue, -90, 90, -100, 100);
+  // return Fvalue;
 }
 
 /**
@@ -135,25 +181,6 @@ int PID(float kp, float ki, float kd, double toError, double priError, double cu
  */
 void accelerate(float acceleration) {
   curTime   = micros();
-  float x, y, z;
-
-  if (!IMU.accelerationAvailable()) {
-    // IMU not available
-    return;
-  }
-  IMU.readAcceleration(x, y, z);
-  
-  float hoek = getPitch();
-
-  Serial.print("(");
-  Serial.print(x);
-  Serial.print(", ");
-  Serial.print(y);
-  Serial.print(", ");
-  Serial.print(z);
-  Serial.print(", ");
-  Serial.print(hoek);
-  Serial.print(") ");
 
   /**
    * Hier berekenen welke versnellingsstoot we moeten hebben
@@ -169,13 +196,14 @@ void accelerate(float acceleration) {
  */
 void setMotorX(int16_t dc)
 {
-  if (dc < -255)
-    dc = -255;
-  if (dc > 255)
-    dc = 255;
-  Serial.print("| setMotorX - ");
+  int MAX = 200;
+  if (dc < -MAX)
+    dc = -MAX;
+  if (dc > MAX)
+    dc = MAX;
+  //Serial.print("\tsetMotorX:\t");
+  Serial.print(" ");
   Serial.print(dc);
-  Serial.print("\t| ");
 
   if (dc < 0)
   {
