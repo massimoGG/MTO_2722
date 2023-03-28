@@ -20,7 +20,11 @@
 #include <Wire.h>
 #include <SPI.h>
 
+// Sensor
 #include <Arduino_LSM9DS1.h>
+
+// Madgwick Filter
+#include <MadgwickAHRS.h>
 
 int PID(float kp, float ki, float kd, double curVal);
 void accelerate(float acceleration);
@@ -41,26 +45,25 @@ float getPitch();
 #define DECLINATION 2.14
 //-8.58 // Declination (degrees) in Boulder, CO.
 
-unsigned long prevTime  = 0;
-unsigned long curTime   = 0;
+unsigned long prevTime = 0;
+unsigned long curTime = 0;
+
+Madgwick filter;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  /* Serial Init */
-
-  Serial.print("Accelerometer sample rate = ");
-  Serial.print(IMU.accelerationSampleRate());
-  Serial.println(" Hz");
-
-  Serial.print("Accelerometer sample rate = ");
-  Serial.print(IMU.accelerationSampleRate());
-  Serial.println(" Hz");
   Serial.begin(115200);
 
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   Serial.print("Accelerometer sample rate = ");
   Serial.print(IMU.accelerationSampleRate());
-  Serial.println(" Hz");/////////////////////////////////////////////////////////////////////////////////////////////////
+  Serial.println(" Hz");
+
+  //IMU.setContinuousMode();
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////
 
   /* Pin Modes */
   pinMode(PIN_PWM_X, OUTPUT);
@@ -74,7 +77,8 @@ void setup() {
 
   if (!IMU.begin()) {
     Serial.println("Failed to initialize IMU!");
-    while (1);
+    while (1)
+      ;
   }
 
   Serial.print("Accelerometer sample rate = ");
@@ -83,16 +87,18 @@ void setup() {
   Serial.println();
   Serial.println("Acceleration in g's");
   Serial.println("X\tY\tZ");
+
+  filter.begin(952);
 }
 
 void regelDit() {
   float huidigeHoek;
-  
+
   static float grootsteHoek;
   static int stoot;
 
   huidigeHoek = getPitch() + 8;
-  Serial.print("Hoek:\t");
+  //Serial.print("Hoek:\t");
   Serial.print(huidigeHoek);
   /*
     Bereken stoot op de maximale hoek of negeer berekening
@@ -105,7 +111,8 @@ void regelDit() {
     // Serial.print("\tNieuwe stoot:\t");
     // Serial.print(stoot);
   }
-  Serial.print("\tStoot:\t");
+  //Serial.print(" Stoot: ");
+  Serial.print(" ");
   Serial.print(stoot);
 
   /*
@@ -123,34 +130,82 @@ void ruisTest() {
 
   static int cur;
   static unsigned long prevTime;
-  
+
   unsigned long nu = millis();
 
   // Elke 10 sec sneller gaan
   if (nu - prevTime > 1E4) {
-    
+
     // Sneller zetten
     if (cur > 255)
       cur = 255;
-    else 
+    else
       cur += 20;
 
     prevTime = nu;
   }
 
+  //Serial.print(cur);
+  //Serial.print(" ");
+  //Serial.print(getPitch());
 
-  Serial.print(cur);
+  float ax, ay, az, gx, gy, gz;
+
+  if (!IMU.accelerationAvailable())
+    return;
+  IMU.readAcceleration(ax, ay, az);
+
+/*
   Serial.print(" ");
-  Serial.print(getPitch());
+  Serial.print(ax);
+  Serial.print(" ");
+  Serial.print(ay);
+  Serial.print(" ");
+  Serial.print(az);
+*/
+  // Gyroscoop
+  if (!IMU.gyroscopeAvailable())
+    return;
+  IMU.readGyroscope(gx, gy, gz);
 
-  setMotorX(cur);
+/*
+  Serial.print(" ");
+  Serial.print(gx);
+  Serial.print(" ");
+  Serial.print(gy);
+  Serial.print(" ");
+  Serial.print(gz);*/
+
+  filter.updateIMU(gx, gy, gz, ax, ay, az);
+
+  float roll, pitch;
+  
+  roll = filter.getRoll();
+  pitch = filter.getPitch();
+
+  //Serial.print("Orientation: ");
+
+  Serial.print(" ");
+  Serial.print(roll);
+  Serial.print(" ");
+  Serial.print(pitch);
+
+  Serial.print(" ");
+  Serial.print(90);
+
+  Serial.print(" ");
+  Serial.print(-90);
+
+  //setMotorX(cur);
 }
 
 void loop() {
-  regelDit();
+  //regelDit();
+
+  ruisTest();
 
   Serial.println();
-  delay(10);
+  //delay(2); // f = 1/0.002
 }
 
 int PID(float kp, float ki, float kd, double curVal) {
@@ -180,22 +235,21 @@ int PID(float kp, float ki, float kd, double curVal) {
  * Accelerates PWM 
  */
 void accelerate(float acceleration) {
-  curTime   = micros();
+  curTime = micros();
 
   /**
    * Hier berekenen welke versnellingsstoot we moeten hebben
    */
 
 
-  prevTime  = curTime;
+  prevTime = curTime;
 }
 
 /***
  * Bestuurt de X-as motor
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
  */
-void setMotorX(int16_t dc)
-{
+void setMotorX(int16_t dc) {
   int MAX = 200;
   if (dc < -MAX)
     dc = -MAX;
@@ -203,16 +257,13 @@ void setMotorX(int16_t dc)
     dc = MAX;
   //Serial.print("\tsetMotorX:\t");
   Serial.print(" ");
-  Serial.print(dc);
+  //Serial.print(dc);
 
-  if (dc < 0)
-  {
+  if (dc < 0) {
     // Anti-clockwise
     digitalWrite(PIN_X_RIGHT, LOW);
     digitalWrite(PIN_X_LEFT, HIGH);
-  }
-  else
-  {
+  } else {
     // Clockwise
     digitalWrite(PIN_X_LEFT, LOW);
     digitalWrite(PIN_X_RIGHT, HIGH);
@@ -222,13 +273,12 @@ void setMotorX(int16_t dc)
   //  OCR2A = 100;
 }
 
-float getPitch()
-{
+float getPitch() {
   float ax, ay, az;
 
   if (!IMU.accelerationAvailable())
     return;
-    
+
   IMU.readAcceleration(ax, ay, az);
 
   float pitch = atan2(-ax, sqrt(ay * ay + az * az));
