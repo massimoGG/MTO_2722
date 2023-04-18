@@ -23,14 +23,12 @@
 // Sensor
 #include <Arduino_LSM9DS1.h>
 
-// Madgwick Filter
-#include <MadgwickAHRS.h>
-
 int PID(float kp, float ki, float kd, double curVal);
 void accelerate(float acceleration);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
-float getPitch();
+float getPitch(float ax, float ay, float az);
+float getRoll(float ax, float ay, float az);
 
 #define PWM_FREQ 0x03
 
@@ -47,8 +45,6 @@ float getPitch();
 
 unsigned long prevTime = 0;
 unsigned long curTime = 0;
-
-Madgwick filter;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -87,19 +83,16 @@ void setup() {
   Serial.println();
   Serial.println("Acceleration in g's");
   Serial.println("X\tY\tZ");
-
-  filter.begin(952);
 }
 
-void regelDit() {
+void regelDit(float ax, float ay, float az) {
   float huidigeHoek;
-
   static float grootsteHoek;
   static int stoot;
 
-  huidigeHoek = getPitch() + 8;
-  //Serial.print("Hoek:\t");
+  huidigeHoek = getRoll(ax, ay, az);
   Serial.print(huidigeHoek);
+
   /*
     Bereken stoot op de maximale hoek of negeer berekening
   */
@@ -108,12 +101,10 @@ void regelDit() {
     /*    = PID(float kp, float ki, float kd, double toError,
                 double priError, double curVal);*/
     stoot += PID(0.1, 0, 0, huidigeHoek);
-    // Serial.print("\tNieuwe stoot:\t");
-    // Serial.print(stoot);
   }
   //Serial.print(" Stoot: ");
   Serial.print(" ");
-  Serial.print(stoot);
+//  Serial.print(stoot);
 
   /*
     Reset als tussen [-10, 10] graden
@@ -125,92 +116,44 @@ void regelDit() {
   }
 }
 
-void ruisTest() {
-  static int i = 0;
+void loop() {
+  unsigned int now = 0, prev = 0;
 
-  static int cur;
-  static unsigned long prevTime;
+  now = millis();
 
-  unsigned long nu = millis();
-
-  // Elke 10 sec sneller gaan
-  if (nu - prevTime > 1E4) {
-
-    // Sneller zetten
-    if (cur > 255)
-      cur = 255;
-    else
-      cur += 20;
-
-    prevTime = nu;
-  }
-
-  //Serial.print(cur);
-  //Serial.print(" ");
-  //Serial.print(getPitch());
-
-  float ax, ay, az, gx, gy, gz;
+  /**
+   * Meting hoek - Roll
+   * Links  = -90
+   * Rechts = +90
+   */
+  float ax, ay, az;
 
   if (!IMU.accelerationAvailable())
-    return;
+    return;  // TODO????
+
   IMU.readAcceleration(ax, ay, az);
 
-/*
-  Serial.print(" ");
-  Serial.print(ax);
-  Serial.print(" ");
-  Serial.print(ay);
-  Serial.print(" ");
-  Serial.print(az);
-*/
-  // Gyroscoop
-  if (!IMU.gyroscopeAvailable())
-    return;
-  IMU.readGyroscope(gx, gy, gz);
+  /**
+   * Regel systeem aan de hand van de uitgelezen waardes
+   */
+  regelDit(ax, ay, az);
 
-/*
-  Serial.print(" ");
-  Serial.print(gx);
-  Serial.print(" ");
-  Serial.print(gy);
-  Serial.print(" ");
-  Serial.print(gz);*/
-
-  filter.updateIMU(gx, gy, gz, ax, ay, az);
-
-  float roll, pitch;
-  
-  roll = filter.getRoll();
-  pitch = filter.getPitch();
-
-  //Serial.print("Orientation: ");
-
-  Serial.print(" ");
-  Serial.print(roll);
-  Serial.print(" ");
-  Serial.print(pitch);
-
-  Serial.print(" ");
-  Serial.print(90);
-
-  Serial.print(" ");
-  Serial.print(-90);
-
-  //setMotorX(cur);
-}
-
-void loop() {
-  //regelDit();
-
-  ruisTest();
+  /**
+   * 
+   */
+  delay(2);  // f = 1/0.002
 
   Serial.println();
-  //delay(2); // f = 1/0.002
+  prev = now;
 }
 
 int PID(float kp, float ki, float kd, double curVal) {
   static double priError;
   static double toError;
+  
+  /**
+   * Set-waarde om naar te streven voor de PID regelaar
+   */
   int setP = 8;
 
   double error = setP - curVal;
@@ -255,9 +198,6 @@ void setMotorX(int16_t dc) {
     dc = -MAX;
   if (dc > MAX)
     dc = MAX;
-  //Serial.print("\tsetMotorX:\t");
-  Serial.print(" ");
-  //Serial.print(dc);
 
   if (dc < 0) {
     // Anti-clockwise
@@ -273,17 +213,14 @@ void setMotorX(int16_t dc) {
   //  OCR2A = 100;
 }
 
-float getPitch() {
-  float ax, ay, az;
-
-  if (!IMU.accelerationAvailable())
-    return;
-
-  IMU.readAcceleration(ax, ay, az);
-
-  float pitch = atan2(-ax, sqrt(ay * ay + az * az));
-
-  // Convert radians to degrees
+float getPitch(float ax, float ay, float az) {
+  float pitch = atan(ax / sqrt(ay * ay + az * az));
   pitch *= 180.0 / PI;
   return pitch;
+}
+
+float getRoll(float ax, float ay, float az) {
+  float roll = atan(ay / sqrt(ax * ax + az * az));
+  roll *= 180.0 / PI;
+  return roll;
 }
