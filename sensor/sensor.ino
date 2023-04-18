@@ -1,17 +1,15 @@
 /*
-  Arduino LSM9DS1 - Simple Accelerometer
+Inverted Pendulum 
 
-  This example reads the acceleration values from the LSM9DS1
-  sensor and continuously prints them to the Serial Monitor
-  or Serial Plotter.
+- Geef stoot/versnelling tussen [-10, 10] graden
+- Hoek meting bepaalt PWM (Enkel grootste hoek onthouden)
+- PWM bepaalt rechtstreeks de RPM
+- BV 50 PWM van de 255 => 20% RPM van de MAX RPM (~10k RPM) = 2kRPM
 
-  The circuit:
-  - Arduino Nano 33 BLE Sense
-
-  created 10 Jul 2019
-  by Riccardo Rizzo
-
-  This example code is in the public domain.
+TODO:
+- Versnelling met PWM
+- ipv setMotorX rechtstreeks aan te spreken, versnel functie oproepen? Dit bepaalt dan hoeveel meer PWM erbij aangestuurd moet worden
+- MAX Hoek = [-90, 90]
 */
 
 #include <stdio.h>
@@ -127,6 +125,9 @@ void regelDit() {
   }
 }
 
+#define AANTAL_GEMIDDELD 15
+float metingen[AANTAL_GEMIDDELD];
+
 void loop() {
   unsigned int now = 0, prev = 0;
 
@@ -141,7 +142,33 @@ void loop() {
   /**
    * Regel systeem aan de hand van de uitgelezen waardes
    */
-  regelDit();
+  // regelDit();
+  setMotorX(100);
+
+  float gemiddeldeHoek = 0;
+
+  static int index;
+  metingen[index] = getRoll();
+  index++;
+  if (index == AANTAL_GEMIDDELD)
+    index = 0;
+
+  // Bereken gemiddelde
+  for (int i = 0; i < AANTAL_GEMIDDELD; i++) {
+    gemiddeldeHoek += metingen[i];
+  }
+
+  gemiddeldeHoek /= AANTAL_GEMIDDELD;
+  Serial.print(90);
+  Serial.print(" ");
+  Serial.print(-90);
+  Serial.print(" ");
+  Serial.print(gemiddeldeHoek);
+
+  /**
+   * Uitmiddelen
+   */
+
 
   /**
    * 
@@ -155,7 +182,7 @@ void loop() {
 int PID(float kp, float ki, float kd, double curVal) {
   static double priError;
   static double toError;
-  
+
   /**
    * Set-waarde om naar te streven voor de PID regelaar
    */
