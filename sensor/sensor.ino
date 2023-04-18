@@ -24,11 +24,10 @@
 #include <Arduino_LSM9DS1.h>
 
 int PID(float kp, float ki, float kd, double curVal);
-void accelerate(float acceleration);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
 float getPitch(float ax, float ay, float az);
-float getRoll(float ax, float ay, float az);
+float getRoll();
 
 #define PWM_FREQ 0x03
 
@@ -43,6 +42,7 @@ float getRoll(float ax, float ay, float az);
 #define DECLINATION 2.14
 //-8.58 // Declination (degrees) in Boulder, CO.
 
+float setPoint = 0;
 unsigned long prevTime = 0;
 unsigned long curTime = 0;
 
@@ -83,14 +83,24 @@ void setup() {
   Serial.println();
   Serial.println("Acceleration in g's");
   Serial.println("X\tY\tZ");
+
+  /**
+   * Calibreer rustpunt
+   */
+  // Bepaal hoek
+  setPoint = getRoll();
+  Serial.print("New Setpoint is: ");
+  Serial.println(setPoint);
 }
 
-void regelDit(float ax, float ay, float az) {
+void regelDit() {
   float huidigeHoek;
   static float grootsteHoek;
   static int stoot;
 
-  huidigeHoek = getRoll(ax, ay, az);
+  huidigeHoek = getRoll();
+  if (huidigeHoek == 1000)
+    return;
   Serial.print(huidigeHoek);
 
   /*
@@ -104,15 +114,16 @@ void regelDit(float ax, float ay, float az) {
   }
   //Serial.print(" Stoot: ");
   Serial.print(" ");
-//  Serial.print(stoot);
+  Serial.print(stoot);
 
   /*
     Reset als tussen [-10, 10] graden
     MAAR HIER GEVEN WE OOK DE STOOT!
   */
-  if (abs(huidigeHoek) < 40) {
+  if (abs(huidigeHoek) < 10) {
     grootsteHoek = 0;
     setMotorX(stoot);
+    // TODO : Hier de versnelling geven.
   }
 }
 
@@ -126,17 +137,11 @@ void loop() {
    * Links  = -90
    * Rechts = +90
    */
-  float ax, ay, az;
-
-  if (!IMU.accelerationAvailable())
-    return;  // TODO????
-
-  IMU.readAcceleration(ax, ay, az);
 
   /**
    * Regel systeem aan de hand van de uitgelezen waardes
    */
-  regelDit(ax, ay, az);
+  regelDit();
 
   /**
    * 
@@ -174,20 +179,6 @@ int PID(float kp, float ki, float kd, double curVal) {
   // return Fvalue;
 }
 
-/**
- * Accelerates PWM 
- */
-void accelerate(float acceleration) {
-  curTime = micros();
-
-  /**
-   * Hier berekenen welke versnellingsstoot we moeten hebben
-   */
-
-
-  prevTime = curTime;
-}
-
 /***
  * Bestuurt de X-as motor
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
@@ -219,7 +210,14 @@ float getPitch(float ax, float ay, float az) {
   return pitch;
 }
 
-float getRoll(float ax, float ay, float az) {
+float getRoll() {
+  float ax, ay, az;
+
+  if (!IMU.accelerationAvailable())
+    return 1000;  // fout
+
+  IMU.readAcceleration(ax, ay, az);
+
   float roll = atan(ay / sqrt(ax * ax + az * az));
   roll *= 180.0 / PI;
   return roll;
