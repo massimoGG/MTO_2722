@@ -21,7 +21,7 @@ TODO:
 // Sensor
 #include <Arduino_LSM9DS1.h>
 
-int PID(float kp, float ki, float kd, double curVal);
+int PID(double curVal);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
 float getPitch(float ax, float ay, float az);
@@ -33,16 +33,12 @@ float getRoll();
 #define PIN_X_LEFT 7
 #define PIN_X_RIGHT 6
 
-// Earth's magnetic field varies by location. Add or subtract
-// a declination to get a more accurate heading. Calculate
-// your's here:
-// http://www.ngdc.noaa.gov/geomag-web/#declination
-#define DECLINATION 2.14
-//-8.58 // Declination (degrees) in Boulder, CO.
-
 float setPoint = 0;
 unsigned long prevTime = 0;
 unsigned long curTime = 0;
+
+/// @brief PID values
+const float kp=0.1, ki=0.0, kd=0.0;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -91,28 +87,45 @@ void setup() {
   Serial.println(setPoint);
 }
 
+/**
+ * @brief Regellus algorithme
+ */
 void regelDit() {
+  // Huidige hoek gemeten door sensor
   float huidigeHoek;
+  int output;
+
+  // Grootste hoek gemeten tot nu toe
   static float grootsteHoek;
+  // De huidige PWM die aangelegd wordt aan de motor
+  static int huidigePWM;
   static int stoot;
 
   huidigeHoek = getRoll();
+  // Als er geen hoek is, skip deze iteratie
   if (huidigeHoek == 1000)
     return;
   Serial.print(huidigeHoek);
 
-  /*
-    Bereken stoot op de maximale hoek of negeer berekening
-  */
+  /**
+   * Update telkens de grootste huidige hoek
+   */
   if (abs(huidigeHoek) > abs(grootsteHoek)) {
     grootsteHoek = huidigeHoek;
-    /*    = PID(float kp, float ki, float kd, double toError,
-                double priError, double curVal);*/
-    stoot += PID(0.1, 0, 0, huidigeHoek);
+
+    // Bereken aan te leggen versnelling bij grootste hoek
+    output = PID(huidigeHoek);
+    Serial.print(" \tPID output: ");
+    Serial.print(output);
+
+    // Vergelijk met hudige.
+    // Verschil bepaalt in te stellen PWM?
+    Serial.print(" \tHuidigePWM: ");
+    Serial.print(huidigePWM);
+    huidigePWM += output; // Tel op?
+    Serial.print(" \tNieuwe PWM: ");
+    Serial.print(huidigePWM);
   }
-  //Serial.print(" Stoot: ");
-  Serial.print(" ");
-  Serial.print(stoot);
 
   /*
     Reset als tussen [-10, 10] graden
@@ -120,8 +133,7 @@ void regelDit() {
   */
   if (abs(huidigeHoek) < 10) {
     grootsteHoek = 0;
-    setMotorX(stoot);
-    // TODO : Hier de versnelling geven.
+    setMotorX(huidigePWM);
   }
 }
 
@@ -179,7 +191,7 @@ void loop() {
   prev = now;
 }
 
-int PID(float kp, float ki, float kd, double curVal) {
+int PID(double curVal) {
   static double priError;
   static double toError;
 
@@ -211,6 +223,7 @@ int PID(float kp, float ki, float kd, double curVal) {
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
  */
 void setMotorX(int16_t dc) {
+
   int MAX = 200;
   if (dc < -MAX)
     dc = -MAX;
