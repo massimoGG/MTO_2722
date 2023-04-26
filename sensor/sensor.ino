@@ -17,22 +17,21 @@ TODO:
 
 #include <Wire.h>
 #include <SPI.h>
+#include <SparkFunLSM9DS1.h>
 
-// Sensor
-#include <Arduino_LSM9DS1.h>
+#define DEBUG 0
 
 #define PWM_FREQ 0x03
 #define PIN_PWM_X 9
 #define PIN_X_LEFT 7
 #define PIN_X_RIGHT 6
 
-#define DEBUG 0
+#define DECLINATION -8.58
 
 double PID(double curVal);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
 float getGyro();
-float getMagnet();
 float getPitch(float ax, float ay, float az);
 float getRoll();
 float getAvgRoll();
@@ -41,8 +40,7 @@ float getAvgRoll();
 #define AANTAL_GEMIDDELD 2
 float metingen[AANTAL_GEMIDDELD];
 
-unsigned long prevTime = 0;
-unsigned long curTime = 0;
+LSM9DS1 imu;
 
 /// @brief PID values
 /*
@@ -54,15 +52,16 @@ const float kp = 10, ki = 0.00, kd = 5;
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  Serial.begin(115200);
+  Serial.begin(460800);
 
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  Wire.begin();
 
-  Serial.print("Accelerometer sample rate = ");
-  Serial.print(IMU.accelerationSampleRate());
-  Serial.println(" Hz");
-
-  //IMU.setContinuousMode();
+  // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
+  if (!imu.begin()) {
+    Serial.println("Failed to communicate with LSM9DS1.");
+    while (1)
+      ;
+  }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -73,22 +72,6 @@ void setup() {
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  /* I2C init */
-  Wire.begin();
-
-  if (!IMU.begin()) {
-    Serial.println("Failed to initialize IMU!");
-    while (1)
-      ;
-  }
-
-  Serial.print("Accelerometer sample rate = ");
-  Serial.print(IMU.accelerationSampleRate());
-  Serial.println(" Hz");
-  Serial.println();
-  Serial.println("Acceleration in g's");
-  Serial.println("X\tY\tZ");
-
   /**
    * Calibreer rustpunt
    */
@@ -96,7 +79,8 @@ void setup() {
   /*
   setPoint = getRoll();
   Serial.print("New Setpoint is: ");
-  Serial.println(setPoint);*/
+  Serial.println(setPoint);
+  */
 }
 
 /**
@@ -120,37 +104,23 @@ void regelDit() {
    * Links  = -90
    * Rechts = +90
    */
-   /*
+  /*
   huidigeHoek = getAvgRoll();
   // Als er geen hoek is, skip deze iteratie
   if (huidigeHoek == 999)
     return;*/
   currentAcceleration = getGyro() - 4.5;
-  //currentAngle = getAvgRoll();
 
-  float mx, my, mz;
-  if (!IMU.magneticFieldAvailable())
+  if (!imu.accelAvailable())
     return;
+  imu.readAccel();
 
-/* TODO: Zoeken wanneer die omgekeerd is, tusesn twee hoeken minteken omdraaien*/
-  IMU.readMagneticField(mx, my, mz);
-  Serial.print(mx);
-  Serial.print(" \t");
-  Serial.print(my);
-  Serial.print(" \t");
-  Serial.print(mz);
-  Serial.print(" \t");
+  Serial.print(" \tAcc: ");
+  Serial.print(imu.ax);
+  // OMGEKEERD WANNEER AX > 0
 
-  /*
-  if (currentAngle == 999)
-    return;*/
+  /* TODO: Zoeken wanneer die omgekeerd is, tusesn twee hoeken minteken omdraaien*/
 
-  /**
-   * Update telkens de grootste huidige hoek EN als de hoek boven de RESETWAARDE is
-   */
-  Serial.print(" \tCurrentAngle: ");
-  Serial.print(currentAngle);
-  
   Serial.print(" \tCurrentAcceleration: ");
   Serial.print(currentAcceleration);
 
@@ -170,7 +140,7 @@ void regelDit() {
   Serial.println();
 
   setMotorX(huidigePWM);
-   /*
+  /*
   if (abs(huidigeHoek) > abs(grootsteHoek) && abs(huidigeHoek) > StootHoek) {
     stootGegeven = false;
     grootsteHoek = huidigeHoek;
@@ -285,40 +255,21 @@ float getPitch(float ax, float ay, float az) {
   return pitch;
 }
 
-float getMagnet() {
-  float mx, my, mz;
-
-  if (!IMU.magneticFieldAvailable())
-    return 999;
-  
-  IMU.readMagneticField(mx, my, mz);
-  Serial.print((int)mx);
-  Serial.print(" \t");
-  Serial.print((int)my);
-  Serial.print(" \t");
-  Serial.print((int)mz);
-  Serial.print(" \t");
-}
-
 float getGyro() {
-  float ax, ay, az;
+  if (!imu.gyroAvailable())
+    return 0;
 
-  if (!IMU.gyroscopeAvailable())
-    return 999;
-  
-  IMU.readGyroscope(ax, ay, az);
-  return az;
+  imu.readGyro();
+  return imu.calcGyro(imu.az);
 }
 
 float getRoll() {
-  float ax, ay, az;
-
-  if (!IMU.accelerationAvailable())
+  if (!imu.accelAvailable())
     return 999;  // fout
 
-  IMU.readAcceleration(ax, ay, az);
+  imu.readAccel();
 
-  float roll = atan(ay / sqrt(ax * ax + az * az));
+  float roll = atan(imu.calcAccel(imu.ay) / sqrt(imu.calcAccel(imu.ax) * imu.calcAccel(imu.ax) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
   roll *= 180.0 / PI;
   return roll;
 }
@@ -331,9 +282,9 @@ float getAvgRoll() {
 
   static int index;
   metingen[index] = getRoll();
-  if (metingen[index] == 999) 
+  if (metingen[index] == 999)
     return 999;
-  
+
   index++;
   if (index == AANTAL_GEMIDDELD)
     index = 0;
