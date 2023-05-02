@@ -29,6 +29,7 @@ TODO:
 #define DECLINATION -8.58
 
 double PID(double curVal);
+double PID2(double curVal);
 void setMotorX(int16_t dc);
 void setMotorY(int16_t dc);
 float getGyro();
@@ -43,21 +44,22 @@ float metingen[AANTAL_GEMIDDELD];
 LSM9DS1 imu;
 
 /// @brief PID values
-/*
-Goeie waardes
-const float kp = 3, ki = 0.00, kd = 10;
-*/
-const float kp = 10, ki = 0.00, kd = 5;
+
+//Goeie waardes
+//const float kp = 3, ki = 0.00, kd = 10;
+
+const float kp = 35, ki = 0.00, kd = 10;
+const float kp2 = 20, ki2 = 0.00, kd2 = 1;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  Serial.begin(460800);
+  Serial.begin(115200);
 
   Wire.begin();
 
   // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
-  if (!imu.begin()) {
+  if (imu.begin() == false) {
     Serial.println("Failed to communicate with LSM9DS1.");
     while (1)
       ;
@@ -81,6 +83,7 @@ void setup() {
   Serial.print("New Setpoint is: ");
   Serial.println(setPoint);
   */
+  //imu.calibrate();
 }
 
 /**
@@ -89,7 +92,7 @@ void setup() {
 void regelDit() {
   // Huidige hoek gemeten door sensor
   float currentAngle, currentAcceleration;
-  double output;
+  double input, output;
   const int StootHoek = 5;
 
   // Grootste hoek gemeten tot nu toe
@@ -99,40 +102,53 @@ void regelDit() {
   static int stoot;
   static bool stootGegeven;
 
-  /**
-   * Meting hoek - Roll
-   * Links  = -90
-   * Rechts = +90
-   */
   /*
   huidigeHoek = getAvgRoll();
-  // Als er geen hoek is, skip deze iteratie
+  // Als er geen hoek is, skip deze iteratie/10
   if (huidigeHoek == 999)
     return;*/
-  currentAcceleration = getGyro() - 4.5;
 
+  // Op basis van hoek.
   if (!imu.accelAvailable())
     return;
   imu.readAccel();
 
-  Serial.print(" \tAcc: ");
+  Serial.print(" \tHoogte: ");
   Serial.print(imu.ax);
-  // OMGEKEERD WANNEER AX > 0
-
-  /* TODO: Zoeken wanneer die omgekeerd is, tusesn twee hoeken minteken omdraaien*/
-
+  
+  currentAcceleration = getGyro();
+  if (currentAcceleration == 999)
+      return;  // Fout, skip deze iteratie
   Serial.print(" \tCurrentAcceleration: ");
   Serial.print(currentAcceleration);
 
-  output = PID(currentAcceleration);
-  Serial.print(" \tPID output: ");
-  Serial.print(output);
+/*
+  if (imu.ax < 12000) {
 
-  /**
-   * Factor aanpassing
-   */
-  // Opslingeren
-  huidigePWM = -output;
+    output = PID(currentAcceleration);
+    Serial.print(" \tPID1 output: ");
+    Serial.print(output);
+
+    huidigePWM = -output;
+
+  } else*/ {
+    // Wanneer we boven zitten, gebruik andere PID regelaar
+    int hoekFout = getRoll() ;
+
+    Serial.print(" \tHoekfout: ");
+    Serial.print(hoekFout);
+
+    input = -(0.3 * hoekFout + 0.8 * currentAcceleration);
+
+    Serial.print(" \t\tPID2 input: ");
+    Serial.print(input);
+
+    output = PID2(input);
+    Serial.print(" \tPID2 output: ");
+    Serial.print(output);
+
+    huidigePWM = output - 20;
+  }
 
   Serial.print(" \tHuidigePWM: ");
   Serial.print(huidigePWM);
@@ -193,7 +209,6 @@ void loop() {
    * Regel systeem aan de hand van de uitgelezen waardes
    */
   regelDit();
-
   delay(1);  // f = 1/0.002 = 500Hz
 }
 
@@ -222,6 +237,28 @@ double PID(double curVal) {
 
   // Fvalue = map(Fvalue, -90, 90, -100, 100);
   // return Fvalue;
+}
+
+double PID2(double curVal) {
+  static double priError2;
+  static double toError2;
+
+  /**
+   * Set-waarde om naar te streven voor de PID regelaar
+   */
+  int setP = 0;
+
+  double error = setP - curVal;
+
+  double Pvalue = error * kp2;
+  double Ivalue = toError2 * ki2;
+  double Dvalue = (error - priError2) * kd2;
+
+  double PIDvalue = Pvalue + Ivalue + Dvalue;
+  priError2 = error;
+  toError2 += error;
+
+  return PIDvalue;
 }
 
 /***
@@ -257,10 +294,10 @@ float getPitch(float ax, float ay, float az) {
 
 float getGyro() {
   if (!imu.gyroAvailable())
-    return 0;
+    return 999;
 
   imu.readGyro();
-  return imu.calcGyro(imu.az);
+  return imu.calcGyro(imu.gz) / 10;
 }
 
 float getRoll() {
