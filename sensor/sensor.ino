@@ -19,6 +19,8 @@ TODO:
 #include <SPI.h>
 #include <SparkFunLSM9DS1.h>
 
+#include <Encoder.h>
+
 #define DEBUG 0
 
 #define PWM_FREQ 0x03
@@ -42,6 +44,7 @@ float getAvgRoll();
 float metingen[AANTAL_GEMIDDELD];
 
 LSM9DS1 imu;
+Encoder motor(2,3);
 
 /// @brief PID values
 
@@ -49,7 +52,7 @@ LSM9DS1 imu;
 //const float kp = 3, ki = 0.00, kd = 10;
 
 const float kp = 35, ki = 0.00, kd = 10;
-const float kp2 = 20, ki2 = 0.00, kd2 = 1;
+const float kp2 = 105, ki2 = 0, kd2 = 25;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,6 +87,9 @@ void setup() {
   Serial.println(setPoint);
   */
   //imu.calibrate();
+
+  // Motor Encoder
+  motor.write(0);
 }
 
 /**
@@ -113,17 +119,33 @@ void regelDit() {
     return;
   imu.readAccel();
 
+  /*
   Serial.print(" \tHoogte: ");
   Serial.print(imu.ax);
+  */
   
   currentAcceleration = getGyro();
   if (currentAcceleration == 999)
       return;  // Fout, skip deze iteratie
-  Serial.print(" \tCurrentAcceleration: ");
-  Serial.print(currentAcceleration);
 
-/*
-  if (imu.ax < 12000) {
+      /*
+      -4000 = -180
+      -2000 = -90
+      0     = 0
+      2000  = 90
+      4000 = 180
+    */
+  int hoekFout = motor.read();
+  double graden =  ((double)hoekFout / 4000 * 180);
+
+  /*
+  Serial.print("90 -90 ");
+  Serial.print(" \tCurrentAcceleration: ");
+  Serial.print(" ");
+  Serial.print(currentAcceleration);
+  */
+  
+  if (abs(graden) > 10) {
 
     output = PID(currentAcceleration);
     Serial.print(" \tPID1 output: ");
@@ -131,28 +153,35 @@ void regelDit() {
 
     huidigePWM = -output;
 
-  } else*/ {
+  } else {
     // Wanneer we boven zitten, gebruik andere PID regelaar
-    int hoekFout = getRoll() ;
 
-    Serial.print(" \tHoekfout: ");
-    Serial.print(hoekFout);
+    //int hoekFout = getRoll();
 
-    input = -(0.3 * hoekFout + 0.8 * currentAcceleration);
+    //Serial.print(" \tHoekfout: ");
+    Serial.print(" ");
+    Serial.print(graden);
 
-    Serial.print(" \t\tPID2 input: ");
+    input = -graden;//-(graden + 0.8 * currentAcceleration);
+    //input = currentAcceleration;
+
+    //Serial.print(" \t\tPID2 input: ");
+    Serial.print(" ");
     Serial.print(input);
 
     output = PID2(input);
-    Serial.print(" \tPID2 output: ");
+    //Serial.print(" \tPID2 output: ");
+    Serial.print(" ");
     Serial.print(output);
 
     huidigePWM = output - 20;
   }
 
-  Serial.print(" \tHuidigePWM: ");
+  //Serial.print(" \tHuidigePWM: ");
+  /*
+  Serial.print(" ");
   Serial.print(huidigePWM);
-
+*/
   Serial.println();
 
   setMotorX(huidigePWM);
@@ -209,7 +238,8 @@ void loop() {
    * Regel systeem aan de hand van de uitgelezen waardes
    */
   regelDit();
-  delay(1);  // f = 1/0.002 = 500Hz
+  //delayMicroseconds(500);
+  delay(1);
 }
 
 double PID(double curVal) {
