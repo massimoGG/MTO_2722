@@ -19,6 +19,7 @@ TODO:
 #include <SPI.h>
 #include <SparkFunLSM9DS1.h>
 
+#define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 
 #define DEBUG 0
@@ -106,16 +107,22 @@ void regelDit() {
   static int stoot;
   static bool stootGegeven;
 
-  /*
-  huidigeHoek = getAvgRoll();
+/*
+// IMU Hoek meting
+  float huidigeHoek = getAvgRoll();
   // Als er geen hoek is, skip deze iteratie/10
   if (huidigeHoek == 999)
-    return;*/
+    return;
+  Serial.print("avgroll: ");
+  Serial.print(huidigeHoek);
+  */
 
   // Op basis van hoek.
+  /*
   if (!imu.accelAvailable())
     return;
   imu.readAccel();
+  */
 
   /*
   Serial.print(" \tHoogte: ");
@@ -145,7 +152,7 @@ void regelDit() {
   */
 
   double graden =  ((double)hoekFout / 4096 * 180) ;
-  Serial.print("Hoek: ");
+  Serial.print("\t ");
   Serial.print(graden);
 
   /*
@@ -168,20 +175,19 @@ void regelDit() {
 
     //int hoekFout = getRoll();
 
-    //Serial.print(" \tHoekfout: ");
-    Serial.print(" ");
-    Serial.print(graden);
+//  8   //Serial.print(" \tHoekfout: ");
+//     Serial.print(" ");
+//     Serial.print(graden);
 
     input = -graden;//-(graden + 0.8 * currentAcceleration);
     //input = currentAcceleration;
 
     //Serial.print(" \t\tPID2 input: ");
-    Serial.print(" ");
-    Serial.print(input);
+    // Serial.print(" ");
+    // Serial.print(input);
 
     output = PID2(input);
-    //Serial.print(" \tPID2 output: ");
-    Serial.print(" ");
+    Serial.print(" \tPID2 output: ");
     Serial.print(output);
 
     huidigePWM = output; //- 20;
