@@ -46,13 +46,12 @@ float metingen[AANTAL_GEMIDDELD];
 LSM9DS1 imu;
 Encoder motor(2,3);
 
-/// @brief PID values
-
-//Goeie waardes
-//const float kp = 3, ki = 0.00, kd = 10;
-
-const float kp = 35, ki = 0.00, kd = 10;
+// PID voor opslingeren
+const float kp = 8, /*35*/ ki = 0.00, kd = 8;
+// PID voor stabiliseren
 const float kp2 = 105, ki2 = 0, kd2 = 25;
+
+float x=0.0, P=1.0, Q=0.01, R=0.1;
 
 void setup() {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -64,8 +63,7 @@ void setup() {
   // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
   if (imu.begin() == false) {
     Serial.println("Failed to communicate with LSM9DS1.");
-    while (1)
-      ;
+    //while (1);
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -136,7 +134,19 @@ void regelDit() {
       4000 = 180
     */
   int hoekFout = motor.read();
-  double graden =  ((double)hoekFout / 4000 * 180);
+
+  // Kalman filter
+  /*
+  P = P + Q;
+  float K = P / (P + R);
+  x = x + K *(hoekFout - x);
+  P = (1 - K) * P;
+  hoekFout = x;
+  */
+
+  double graden =  ((double)hoekFout / 4096 * 180) ;
+  Serial.print("Hoek: ");
+  Serial.print(graden);
 
   /*
   Serial.print("90 -90 ");
@@ -145,7 +155,7 @@ void regelDit() {
   Serial.print(currentAcceleration);
   */
   
-  if (abs(graden) > 10) {
+  if (abs(graden) > 90) {
 
     output = PID(currentAcceleration);
     Serial.print(" \tPID1 output: ");
@@ -153,7 +163,7 @@ void regelDit() {
 
     huidigePWM = -output;
 
-  } else {
+  } else if (abs(graden) < 25) {
     // Wanneer we boven zitten, gebruik andere PID regelaar
 
     //int hoekFout = getRoll();
@@ -174,7 +184,7 @@ void regelDit() {
     Serial.print(" ");
     Serial.print(output);
 
-    huidigePWM = output - 20;
+    huidigePWM = output; //- 20;
   }
 
   //Serial.print(" \tHuidigePWM: ");
@@ -238,8 +248,6 @@ void loop() {
    * Regel systeem aan de hand van de uitgelezen waardes
    */
   regelDit();
-  //delayMicroseconds(500);
-  delay(1);
 }
 
 double PID(double curVal) {
