@@ -1,17 +1,10 @@
 /*
-Inverted Pendulum 
-
-- Geef stoot/versnelling tussen [-10, 10] graden
-- Hoek meting bepaalt PWM (Enkel grootste hoek onthouden)
-- PWM bepaalt rechtstreeks de RPM
-- BV 50 PWM van de 255 => 20% RPM van de MAX RPM (~10k RPM) = 2kRPM
-
-TODO:
-- Versnelling met PWM
-- ipv setMotorX rechtstreeks aan te spreken, versnel functie oproepen? Dit bepaalt dan hoeveel meer PWM erbij aangestuurd moet worden
-- MAX Hoek = [-90, 90]
+  Inverted Pendulum
 */
 
+/**
+ * Header includes
+ */
 #include <stdio.h>
 #include <string.h>
 
@@ -22,15 +15,9 @@ TODO:
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 
-#define DEBUG 0
-
-#define PWM_FREQ 0x03
-#define PIN_PWM_X 9
-#define PIN_X_LEFT 7
-#define PIN_X_RIGHT 6
-
-#define DECLINATION -8.58
-
+/**
+ * Functie prototypes
+ */
 double PID(double curVal);
 double PID2(double curVal);
 void setMotorX(int16_t dc);
@@ -40,31 +27,45 @@ float getPitch(float ax, float ay, float az);
 float getRoll();
 float getAvgRoll();
 
+// Gebruik Serial output voor informatie
+#define DEBUG 0
+
+/**
+ * Arduino Uno pinnummers
+ */
+#define PIN_PWM_X 9
+#define PIN_X_LEFT 7
+#define PIN_X_RIGHT 6
+#define PIN_ENC_A 2
+#define PIN_ENC_B 3
+
 // Uitmiddelen van sensor
 #define AANTAL_GEMIDDELD 2
 float metingen[AANTAL_GEMIDDELD];
 
+// IMU klasse
 LSM9DS1 imu;
-Encoder motor(2,3);
+// Encoder klasse op poort
+Encoder motor(PIN_ENC_A, PIN_ENC_B);
 
 // PID voor opslingeren
 const float kp = 8, /*35*/ ki = 0.00, kd = 8;
 // PID voor stabiliseren
 const float kp2 = 105, ki2 = 0, kd2 = 25;
 
-float x=0.0, P=1.0, Q=0.01, R=0.1;
-
-void setup() {
+void setup()
+{
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   Serial.begin(115200);
 
   Wire.begin();
 
-  // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
-  if (imu.begin() == false) {
+  // With no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
+  if (imu.begin() == false)
+  {
     Serial.println("Failed to communicate with LSM9DS1.");
-    //while (1);
+    // while (1);
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,25 +77,12 @@ void setup() {
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  /**
-   * Calibreer rustpunt
-   */
-  // Bepaal hoek
-  /*
-  setPoint = getRoll();
-  Serial.print("New Setpoint is: ");
-  Serial.println(setPoint);
-  */
-  //imu.calibrate();
-
   // Motor Encoder
   motor.write(0);
 }
 
-/**
- * @brief Regellus algorithme
- */
-void regelDit() {
+void loop()
+{
   // Huidige hoek gemeten door sensor
   float currentAngle, currentAcceleration;
   double input, output;
@@ -107,156 +95,62 @@ void regelDit() {
   static int stoot;
   static bool stootGegeven;
 
-/*
-// IMU Hoek meting
-  float huidigeHoek = getAvgRoll();
-  // Als er geen hoek is, skip deze iteratie/10
-  if (huidigeHoek == 999)
-    return;
-  Serial.print("avgroll: ");
-  Serial.print(huidigeHoek);
-  */
-
-  // Op basis van hoek.
-  /*
-  if (!imu.accelAvailable())
-    return;
-  imu.readAccel();
-  */
-
-  /*
-  Serial.print(" \tHoogte: ");
-  Serial.print(imu.ax);
-  */
-  
   currentAcceleration = getGyro();
   if (currentAcceleration == 999)
-      return;  // Fout, skip deze iteratie
+  {
+// Er is een fout opgetreden bij het uitlezen van de IMU, skip deze iteratie
+#if DEBUG
+    Serial.println("Error reading acceleration from IMU!");
+#endif
+    return;
+  }
 
-      /*
-      -4000 = -180
-      -2000 = -90
-      0     = 0
-      2000  = 90
-      4000 = 180
-    */
+  // Lees hoek uit de encoder
   int hoekFout = motor.read();
 
-  // Kalman filter
-  /*
-  P = P + Q;
-  float K = P / (P + R);
-  x = x + K *(hoekFout - x);
-  P = (1 - K) * P;
-  hoekFout = x;
-  */
-
-  double graden =  ((double)hoekFout / 4096 * 180) ;
+  double graden = ((double)hoekFout / 4096 * 180);
+#if DEBUG
   Serial.print("\t ");
   Serial.print(graden);
+#endif
 
-  /*
-  Serial.print("90 -90 ");
-  Serial.print(" \tCurrentAcceleration: ");
-  Serial.print(" ");
-  Serial.print(currentAcceleration);
-  */
-  
-  if (abs(graden) > 90) {
+  if (abs(graden) > 90)
+  {
 
     output = PID(currentAcceleration);
+#if DEBUG
     Serial.print(" \tPID1 output: ");
     Serial.print(output);
+#endif
 
     huidigePWM = -output;
-
-  } else if (abs(graden) < 25) {
+  }
+  else if (abs(graden) < 25)
+  {
     // Wanneer we boven zitten, gebruik andere PID regelaar
 
-    //int hoekFout = getRoll();
-
-//  8   //Serial.print(" \tHoekfout: ");
-//     Serial.print(" ");
-//     Serial.print(graden);
-
-    input = -graden;//-(graden + 0.8 * currentAcceleration);
-    //input = currentAcceleration;
-
-    //Serial.print(" \t\tPID2 input: ");
-    // Serial.print(" ");
-    // Serial.print(input);
+    input = -graden; //-(graden + 0.8 * currentAcceleration);
 
     output = PID2(input);
+#if DEBUG
     Serial.print(" \tPID2 output: ");
     Serial.print(output);
+#endif
 
     huidigePWM = output; //- 20;
   }
 
-  //Serial.print(" \tHuidigePWM: ");
-  /*
-  Serial.print(" ");
-  Serial.print(huidigePWM);
-*/
+#if DEBUG
+  Serial.print(" \tHuidigePWM: ");
   Serial.println();
+#endif
 
+  // Stuur de berekende PWM naar de motor
   setMotorX(huidigePWM);
-  /*
-  if (abs(huidigeHoek) > abs(grootsteHoek) && abs(huidigeHoek) > StootHoek) {
-    stootGegeven = false;
-    grootsteHoek = huidigeHoek;
-
-    Serial.print(" \tHuidigeHoek: ");
-    Serial.print(huidigeHoek);
-
-    // Bereken aan te leggen versnelling bij grootste hoek
-    output = pid.Run(huidigeHoek);
-    //output = PID(huidigeHoek);
-    Serial.print(" \tPID output: ");
-    Serial.print(output);
-
-    // Vergelijk met hudige.
-    // Verschil bepaalt in te stellen PWM?
-    Serial.print(" \tHuidigePWM: ");
-    Serial.print(huidigePWM);
-    //huidigePWM = output * 5;
-    huidigePWM += output;  // Tel op?
-
-    // Begrens PWM tot max
-    if (huidigePWM > 255)
-      huidigePWM = 255;
-    else if (huidigePWM < -255)
-      huidigePWM = -255;
-
-    Serial.print(" \tNieuwe PWM: ");
-    Serial.print(huidigePWM);
-    Serial.println();
-  }*/
-
-  /*
-    Reset als tussen [-10, 10] graden
-    MAAR HIER GEVEN WE OOK DE STOOT!
-    BUG: Doe dit slechts 1 keer tot reset!!
-  */
-  /*
-  if (abs(huidigeHoek) < StootHoek && !stootGegeven) {
-    setMotorX(huidigePWM);
-    Serial.print("Stoot");
-    Serial.println(huidigePWM);
-
-    grootsteHoek = 0;
-    stootGegeven = true;
-  }*/
 }
 
-void loop() {
-  /**
-   * Regel systeem aan de hand van de uitgelezen waardes
-   */
-  regelDit();
-}
-
-double PID(double curVal) {
+double PID(double curVal)
+{
   static double priError;
   static double toError;
 
@@ -276,14 +170,10 @@ double PID(double curVal) {
   toError += error;
 
   return PIDvalue;
-
-  // int Fvalue = (int)PIDvalue;
-
-  // Fvalue = map(Fvalue, -90, 90, -100, 100);
-  // return Fvalue;
 }
 
-double PID2(double curVal) {
+double PID2(double curVal)
+{
   static double priError2;
   static double toError2;
 
@@ -309,18 +199,22 @@ double PID2(double curVal) {
  * Bestuurt de X-as motor
  * @param dc Duty cycle van de motor, negatief = anti-clockwise, positief = clockwise
  */
-void setMotorX(int16_t dc) {
+void setMotorX(int16_t dc)
+{
   int MAX = 255;
   if (dc < -MAX)
     dc = -MAX;
   if (dc > MAX)
     dc = MAX;
 
-  if (dc < 0) {
+  if (dc < 0)
+  {
     // Anti-clockwise
     digitalWrite(PIN_X_RIGHT, LOW);
     digitalWrite(PIN_X_LEFT, HIGH);
-  } else {
+  }
+  else
+  {
     // Clockwise
     digitalWrite(PIN_X_LEFT, LOW);
     digitalWrite(PIN_X_RIGHT, HIGH);
@@ -330,13 +224,15 @@ void setMotorX(int16_t dc) {
   //  OCR2A = 100;
 }
 
-float getPitch(float ax, float ay, float az) {
+float getPitch(float ax, float ay, float az)
+{
   float pitch = atan(ax / sqrt(ay * ay + az * az));
   pitch *= 180.0 / PI;
   return pitch;
 }
 
-float getGyro() {
+float getGyro()
+{
   if (!imu.gyroAvailable())
     return 999;
 
@@ -344,9 +240,10 @@ float getGyro() {
   return imu.calcGyro(imu.gz) / 10;
 }
 
-float getRoll() {
+float getRoll()
+{
   if (!imu.accelAvailable())
-    return 999;  // fout
+    return 999; // fout
 
   imu.readAccel();
 
@@ -358,7 +255,8 @@ float getRoll() {
 /**
  * Berekent de gemiddelde hoek
  */
-float getAvgRoll() {
+float getAvgRoll()
+{
   float gemiddeldeHoek = 0;
 
   static int index;
@@ -371,7 +269,8 @@ float getAvgRoll() {
     index = 0;
 
   // Bereken gemiddelde
-  for (int i = 0; i < AANTAL_GEMIDDELD; i++) {
+  for (int i = 0; i < AANTAL_GEMIDDELD; i++)
+  {
     gemiddeldeHoek += metingen[i];
   }
 
