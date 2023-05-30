@@ -49,9 +49,9 @@ LSM9DS1 imu;
 Encoder motor(PIN_ENC_A, PIN_ENC_B);
 
 // PID voor opslingeren
-const float kp = 8, /*35*/ ki = 0.00, kd = 8;
+const float kp = 153, /*35*/ ki = 0.00, kd = 15;
 // PID voor stabiliseren
-const float kp2 = 105, ki2 = 0, kd2 = 25;
+const float kp2 = 150, ki2 = 0, kd2 = 75;
 
 void setup()
 {
@@ -108,13 +108,13 @@ void loop()
   // Lees hoek uit de encoder
   int hoekFout = motor.read();
 
-  double graden = ((double)hoekFout / 4096 * 180);
+  double graden = ((double)hoekFout / 1000 * 180);
 #if DEBUG
   Serial.print("\t ");
   Serial.print(graden);
 #endif
 
-  if (abs(graden) > 90)
+  if (abs(graden + 180) < 151.5)
   {
 
     output = PID(currentAcceleration);
@@ -125,11 +125,15 @@ void loop()
 
     huidigePWM = -output;
   }
-  else if (abs(graden) < 25)
+  else if ((abs(graden) < 15)or (graden < -352))
   {
     // Wanneer we boven zitten, gebruik andere PID regelaar
 
-    input = -graden; //-(graden + 0.8 * currentAcceleration);
+    if (graden < -180 ){
+      input = -(180 + (graden +180));
+    }else{
+      input = -graden;
+    }
 
     output = PID2(input);
 #if DEBUG
